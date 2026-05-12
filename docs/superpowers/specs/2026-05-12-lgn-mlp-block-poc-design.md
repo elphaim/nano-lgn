@@ -130,11 +130,14 @@ The 16 gate functions `f_g(a,b)` are the product-t-norm soft relaxations:
 | 14 | NAND | 1 − ab |
 | 15 | TRUE | 1 |
 
-**Residual init** (2024-paper trick): init `W[:, 3] = +5.0` (gate "A" =
-passthrough on slot a), all other columns = 0. Then `softmax(W)[:, 3] ≈ 0.993`,
-so at init each layer is ≈ identity-on-π_a. This makes L stacked layers
-trainable from scratch — without it, the 2022-paper variant struggles past
-depth 4.
+**Residual init** (2024-paper trick): init `W[:, 3] = +7.5` (gate "A" =
+passthrough on slot a), all other columns = 0. Then
+`softmax(W)[:, 3] = e^7.5 / (e^7.5 + 15) ≈ 0.9918`, so at init each layer is
+≈ identity-on-π_a (leakage ≈ 0.0082 spread across the other 15 gates). This
+makes L stacked layers trainable from scratch — without it, the 2022-paper
+variant struggles past depth 4. (Earlier drafts of this spec stated `+5.0` and
+`≈ 0.993`; that conflated `softmax([5,0×15])[0] ≈ 0.908` with `sigmoid(5) ≈
+0.993` and was corrected during Task 3.)
 
 `π_a`, `π_b` are sampled once at module init from a seed derived from the
 global config seed, and frozen. No learning on the connection table.
@@ -215,7 +218,7 @@ cfg = TransformerCfg(
     vocab_size=50257,            # GPT-2 BPE
     ffn="lgn",
 )
-lgn = LGNCfg(K=16, L=4, tau=16, residual_init_strength=5.0)
+lgn = LGNCfg(K=16, L=4, tau=16, residual_init_strength=7.5)
 ```
 
 ```python
@@ -225,7 +228,7 @@ cfg = TransformerCfg(
     vocab_size=50257,
     ffn="lgn",
 )
-lgn = LGNCfg(K=32, L=6, tau=32, residual_init_strength=5.0)
+lgn = LGNCfg(K=32, L=6, tau=32, residual_init_strength=7.5)
 ```
 
 `poc_a_mlp.py` / `poc_b_mlp.py` are identical to their `_lgn` siblings except
@@ -307,7 +310,7 @@ Three layers.
 - **Shape:** `LGNMLPBlock(d=128, K=16, L=4)(torch.randn(2, 7, 128)).shape ==
   (2, 7, 128)`.
 - **Finiteness:** forward + backward have no NaN/Inf on random inputs.
-- **Residual init ≈ identity-on-π_a:** with `residual_init_strength=5.0` and
+- **Residual init ≈ identity-on-π_a:** with `residual_init_strength=7.5` and
   one layer, the body's output is close to `gather(z, π_a)` (tol ~1e-2).
 - **Gradient flow:** gradient of loss wrt `θ` (encoder) and `W` (gate mixture)
   is nonzero on a random batch.

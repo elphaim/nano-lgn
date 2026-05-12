@@ -296,7 +296,7 @@ import torch
 import pytest
 from nanolgn.lgn import LogicLayer
 
-def _make(n=64, seed=0, residual_init_strength=5.0):
+def _make(n=64, seed=0, residual_init_strength=7.5):
     return LogicLayer(n=n, seed=seed, residual_init_strength=residual_init_strength)
 
 def test_shape_preserves_width_and_batch():
@@ -323,12 +323,13 @@ def test_finite_forward_and_backward():
 
 def test_residual_init_is_approximately_identity_on_pi_a():
     n = 256
-    layer = _make(n=n, residual_init_strength=5.0)
+    layer = _make(n=n, residual_init_strength=7.5)
     x = torch.rand(8, n)
     y = layer(x)
     expected = x[..., layer.pi_a]  # passthrough on input slot a
-    # softmax([5,0,0,...]) ≈ 0.993; the leakage from the other 15 gates (avg ~0.5)
-    # gives at most ~0.007 * (1) error elementwise.
+    # softmax([7.5, 0, ..., 0])[A] = e^7.5 / (e^7.5 + 15)
+    #                              ≈ 1808.04 / 1823.04 ≈ 0.9918
+    # leakage ≈ 0.0082 spread across 15 gates; max elementwise error ≲ 0.0082.
     assert torch.allclose(y, expected, atol=2e-2)
 
 def test_determinism_same_seed_same_connections():
@@ -381,10 +382,11 @@ class LogicLayer(nn.Module):
         n: input/output width.
         seed: deterministic seed for the random connection table.
         residual_init_strength: logit applied to gate "A" (passthrough on a)
-            at init. softmax([s, 0, ..., 0])[A] ≈ sigmoid-like; s=5 → ≈ 0.993.
+            at init. softmax([s, 0, ..., 0])[A] = e^s / (e^s + 15);
+            s=7.5 → ≈ 0.9918 (leakage ≈ 0.0082 across the other 15 gates).
     """
 
-    def __init__(self, n: int, seed: int, residual_init_strength: float = 5.0):
+    def __init__(self, n: int, seed: int, residual_init_strength: float = 7.5):
         super().__init__()
         self.n = n
         self.residual_init_strength = float(residual_init_strength)
