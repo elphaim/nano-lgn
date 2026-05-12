@@ -49,3 +49,23 @@ class ThermometerEncode(nn.Module):
         # s: (K,) → broadcasts cleanly.
         b = torch.sigmoid(self.s * (x_e - self.theta))  # (..., d, K)
         return b.flatten(-2)                           # (..., d*K)
+
+
+class GroupSumDecode(nn.Module):
+    """(B, T, K*d) -> (B, T, d) via contiguous group-sum, scaled and centered.
+
+    Reshape last dim as (d, K), sum over K, divide by tau, subtract 0.5.
+    Default tau=K → outputs in [-0.5, 0.5].
+    """
+
+    def __init__(self, d_model: int, k: int, tau: float):
+        super().__init__()
+        self.d_model = d_model
+        self.k = k
+        self.tau = float(tau)
+
+    def forward(self, z: Tensor) -> Tensor:
+        # z: (..., d*K)
+        leading = z.shape[:-1]
+        z2 = z.reshape(*leading, self.d_model, self.k)  # (..., d, K)
+        return z2.sum(dim=-1) / self.tau - 0.5

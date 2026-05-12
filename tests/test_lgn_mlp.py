@@ -1,7 +1,7 @@
 # tests/test_lgn_mlp.py
 import torch
 import pytest
-from nanolgn.lgn_mlp import ThermometerEncode
+from nanolgn.lgn_mlp import ThermometerEncode, GroupSumDecode
 
 def test_thermo_shape():
     enc = ThermometerEncode(d_model=128, k=16)
@@ -42,3 +42,27 @@ def test_thermo_param_count_is_dK_plus_K():
     enc = ThermometerEncode(d_model=d, k=k)
     n = sum(p.numel() for p in enc.parameters())
     assert n == d * k + k
+
+
+def test_decode_shape_and_grouping():
+    dec = GroupSumDecode(d_model=4, k=3, tau=3.0)
+    # Build z so each group sums to a known value:
+    # group i gets values [i, i, i] → sum = 3i → /tau=3 → i → −0.5.
+    z = torch.tensor([
+        [0., 0., 0.,  1., 1., 1.,  2., 2., 2.,  3., 3., 3.],
+    ])  # (1, 12) = (1, d*K)
+    y = dec(z)
+    assert y.shape == (1, 4)
+    expected = torch.tensor([[-0.5, 0.5, 1.5, 2.5]])
+    assert torch.allclose(y, expected)
+
+def test_decode_default_tau_centers_at_zero_for_uniform_half():
+    dec = GroupSumDecode(d_model=8, k=16, tau=16.0)
+    # Inputs uniformly = 0.5 → group sum = 8 → /tau = 0.5 → −0.5 → 0.
+    z = torch.full((2, 5, 8 * 16), 0.5)
+    y = dec(z)
+    assert torch.allclose(y, torch.zeros_like(y), atol=1e-6)
+
+def test_decode_no_learnable_params():
+    dec = GroupSumDecode(d_model=8, k=16, tau=16.0)
+    assert sum(p.numel() for p in dec.parameters()) == 0
