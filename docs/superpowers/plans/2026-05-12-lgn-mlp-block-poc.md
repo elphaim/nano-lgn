@@ -449,7 +449,7 @@ def test_lgn_body_shape():
 
 def test_lgn_body_residual_init_is_approx_identity_chain():
     n, L = 128, 6
-    body = LGNBody(n=n, depth=L, seed=0, residual_init_strength=5.0)
+    body = LGNBody(n=n, depth=L, seed=0, residual_init_strength=7.5)
     x = torch.rand(4, n)
     y = body(x)
     # Each layer is ≈ passthrough on its own pi_a (different per layer).
@@ -457,7 +457,9 @@ def test_lgn_body_residual_init_is_approx_identity_chain():
     z = x
     for layer in body.layers:
         z = z[..., layer.pi_a]
-    assert torch.allclose(y, z, atol=5e-2)  # 6 layers compound the leakage
+    # At s=7.5 per-layer leakage ≲ 0.0082; 6 layers compound it. atol=5e-2
+    # leaves headroom while still meaningfully constraining drift.
+    assert torch.allclose(y, z, atol=5e-2)
 
 def test_lgn_body_layer_seeds_differ():
     body = LGNBody(n=64, depth=3, seed=0)
@@ -496,7 +498,7 @@ class LGNBody(nn.Module):
         n: int,
         depth: int,
         seed: int,
-        residual_init_strength: float = 5.0,
+        residual_init_strength: float = 7.5,
     ):
         super().__init__()
         self.n = n
