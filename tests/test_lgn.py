@@ -57,3 +57,38 @@ def test_W_is_a_parameter_pi_are_buffers():
     assert "W" in param_names
     assert "pi_a" in buffer_names
     assert "pi_b" in buffer_names
+
+from nanolgn.lgn import LGNBody
+
+def test_lgn_body_shape():
+    body = LGNBody(n=128, depth=4, seed=0)
+    x = torch.rand(2, 3, 128)
+    assert body(x).shape == (2, 3, 128)
+
+def test_lgn_body_residual_init_is_approx_identity_chain():
+    n, L = 128, 6
+    body = LGNBody(n=n, depth=L, seed=0, residual_init_strength=7.5)
+    x = torch.rand(4, n)
+    y = body(x)
+    # Each layer is ≈ passthrough on its own pi_a (different per layer).
+    # The composition is the chained gather. Walk it explicitly.
+    z = x
+    for layer in body.layers:
+        z = z[..., layer.pi_a]
+    # At s=7.5 per-layer leakage ≲ 0.0082; 6 layers compound it. atol=5e-2
+    # leaves headroom while still meaningfully constraining drift.
+    assert torch.allclose(y, z, atol=5e-2)
+
+def test_lgn_body_layer_seeds_differ():
+    body = LGNBody(n=64, depth=3, seed=0)
+    pis = [layer.pi_a for layer in body.layers]
+    assert not torch.equal(pis[0], pis[1])
+    assert not torch.equal(pis[1], pis[2])
+
+def test_lgn_body_gradients_flow_to_all_W():
+    body = LGNBody(n=64, depth=3, seed=0)
+    x = torch.rand(2, 64)
+    body(x).sum().backward()
+    for layer in body.layers:
+        assert layer.W.grad is not None
+        assert torch.isfinite(layer.W.grad).all()

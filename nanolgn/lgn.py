@@ -51,3 +51,37 @@ class LogicLayer(nn.Module):
         # Broadcast p across leading dims; sum over the gate dim.
         out = (gates * p).sum(dim=-1)            # (..., n)
         return out
+
+
+class LGNBody(nn.Module):
+    """Stack of L width-preserving LogicLayers.
+
+    Each layer has its own connection table, deterministically derived from
+    the body's seed (layer i uses seed = base_seed * 1_000_003 + i).
+    """
+
+    def __init__(
+        self,
+        n: int,
+        depth: int,
+        seed: int,
+        residual_init_strength: float = 7.5,
+    ):
+        super().__init__()
+        self.n = n
+        self.depth = depth
+        self.layers = nn.ModuleList(
+            [
+                LogicLayer(
+                    n=n,
+                    seed=seed * 1_000_003 + i,
+                    residual_init_strength=residual_init_strength,
+                )
+                for i in range(depth)
+            ]
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        for layer in self.layers:
+            x = layer(x)
+        return x
