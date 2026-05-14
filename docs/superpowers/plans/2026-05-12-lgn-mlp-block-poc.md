@@ -1376,7 +1376,7 @@ def test_make_factory_lgn():
         d_model=32, n_layer=2, n_head=2, ctx_len=16,
         vocab_size=257, ffn="lgn", seed=0,
     )
-    lgn = LGNCfg(K=8, L=2, tau=8.0, residual_init_strength=5.0)
+    lgn = LGNCfg(K=8, L=2, tau=8.0, residual_init_strength=7.5)
     factory = make_ffn_factory(cfg, lgn=lgn)
     gpt = GPT(cfg, ffn_factory=factory)
     idx = torch.randint(0, cfg.vocab_size, (1, 4))
@@ -1395,7 +1395,7 @@ def test_lgn_factory_uses_distinct_seed_per_block():
         d_model=32, n_layer=3, n_head=2, ctx_len=16,
         vocab_size=257, ffn="lgn", seed=42,
     )
-    lgn = LGNCfg(K=4, L=1, tau=4.0, residual_init_strength=5.0)
+    lgn = LGNCfg(K=4, L=1, tau=4.0, residual_init_strength=7.5)
     factory = make_ffn_factory(cfg, lgn=lgn)
     gpt = GPT(cfg, ffn_factory=factory)
     pi0 = gpt.blocks[0].ffn.body.layers[0].pi_a
@@ -1440,7 +1440,7 @@ class LGNCfg:
     K: int
     L: int
     tau: float
-    residual_init_strength: float = 5.0
+    residual_init_strength: float = 7.5
 
 
 def make_ffn_factory(
