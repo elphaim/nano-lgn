@@ -4,6 +4,7 @@ from nanolgn.gpt import RMSNorm
 from nanolgn.gpt import precompute_rope, apply_rope
 from nanolgn.gpt import CausalSelfAttention
 from nanolgn.gpt import ReLU2MLP
+from nanolgn.gpt import Block
 
 def test_rmsnorm_unit_rms():
     norm = RMSNorm(64)
@@ -62,3 +63,20 @@ def test_relu2_mlp_param_count():
     mlp = ReLU2MLP(d_model=128, mult=4)
     expected = 128 * 512 + 512 * 128   # 2 linear, no bias
     assert sum(p.numel() for p in mlp.parameters()) == expected
+
+def test_block_shape_with_mlp_factory():
+    cfg = type("C", (), dict(d_model=64, n_head=4, ctx_len=16))
+    factory = lambda c: ReLU2MLP(c.d_model, mult=4)
+    block = Block(cfg=cfg, ffn_factory=factory)
+    x = torch.randn(2, 8, 64)
+    assert block(x).shape == (2, 8, 64)
+
+def test_block_residual_add_with_lgn_factory():
+    from nanolgn.lgn_mlp import LGNMLPBlock
+    cfg = type("C", (), dict(d_model=32, n_head=2, ctx_len=16))
+    factory = lambda c: LGNMLPBlock(d_model=c.d_model, k=8, depth=2, tau=8.0, seed=0)
+    block = Block(cfg=cfg, ffn_factory=factory)
+    x = torch.randn(2, 4, 32)
+    y = block(x)
+    assert y.shape == (2, 4, 32)
+    assert torch.isfinite(y).all()

@@ -97,3 +97,21 @@ class ReLU2MLP(nn.Module):
         h = self.up(x)
         h = F.relu(h).square()
         return self.down(h)
+
+
+class Block(nn.Module):
+    """Pre-norm transformer block with a pluggable FFN factory."""
+
+    def __init__(self, cfg, ffn_factory: Callable):
+        super().__init__()
+        self.norm1 = RMSNorm(cfg.d_model)
+        self.attn = CausalSelfAttention(
+            d_model=cfg.d_model, n_head=cfg.n_head, ctx_len=cfg.ctx_len
+        )
+        self.norm2 = RMSNorm(cfg.d_model)
+        self.ffn = ffn_factory(cfg)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = x + self.attn(self.norm1(x))
+        x = x + self.ffn(self.norm2(x))
+        return x
