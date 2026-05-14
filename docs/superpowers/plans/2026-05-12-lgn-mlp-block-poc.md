@@ -1293,7 +1293,7 @@ class GPT(nn.Module):
     - Token embedding (no learned positional; RoPE inside attention).
     - N pre-norm Blocks with pluggable FFN.
     - RMSNorm before LM head.
-    - LM head tied to embedding weights.
+    - Untied LM head (nanochat convention; weight-tying optional).
     """
 
     def __init__(self, cfg, ffn_factory: Callable):
