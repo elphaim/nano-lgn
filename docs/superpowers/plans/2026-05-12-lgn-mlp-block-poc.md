@@ -808,7 +808,7 @@ class LGNMLPBlock(nn.Module):
         depth: int,
         tau: float,
         seed: int,
-        residual_init_strength: float = 5.0,
+        residual_init_strength: float = 7.5,
     ):
         super().__init__()
         self.encode = ThermometerEncode(d_model=d_model, k=k)
