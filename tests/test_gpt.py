@@ -3,6 +3,7 @@ import pytest
 from nanolgn.gpt import RMSNorm
 from nanolgn.gpt import precompute_rope, apply_rope
 from nanolgn.gpt import CausalSelfAttention
+from nanolgn.gpt import ReLU2MLP
 
 def test_rmsnorm_unit_rms():
     norm = RMSNorm(64)
@@ -51,3 +52,13 @@ def test_attention_is_causal_changing_future_does_not_change_past():
     y2 = attn(x2)
     # Positions 0..4 must be unchanged.
     assert torch.allclose(y1[:, :5], y2[:, :5], atol=1e-5)
+
+def test_relu2_mlp_shape():
+    mlp = ReLU2MLP(d_model=128, mult=4)
+    x = torch.randn(2, 7, 128)
+    assert mlp(x).shape == (2, 7, 128)
+
+def test_relu2_mlp_param_count():
+    mlp = ReLU2MLP(d_model=128, mult=4)
+    expected = 128 * 512 + 512 * 128   # 2 linear, no bias
+    assert sum(p.numel() for p in mlp.parameters()) == expected

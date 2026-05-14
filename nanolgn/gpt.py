@@ -80,3 +80,20 @@ class CausalSelfAttention(nn.Module):
         out = F.scaled_dot_product_attention(q, k, v, is_causal=True)  # (B, H, T, Dh)
         out = out.transpose(1, 2).reshape(B, T, self.d_model)          # (B, T, D)
         return self.proj(out)
+
+
+class ReLU2MLP(nn.Module):
+    """Standard nanochat MLP: Linear(d, m*d) -> ReLU² -> Linear(m*d, d).
+
+    No biases, no learnable scale.
+    """
+
+    def __init__(self, d_model: int, mult: int = 4):
+        super().__init__()
+        self.up = nn.Linear(d_model, mult * d_model, bias=False)
+        self.down = nn.Linear(mult * d_model, d_model, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        h = self.up(x)
+        h = F.relu(h).square()
+        return self.down(h)
