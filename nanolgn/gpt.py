@@ -44,3 +44,39 @@ def apply_rope(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     out_o = x_e * sin + x_o * cos
     out = torch.stack((out_e, out_o), dim=-1)
     return out.reshape(*leading, -1)
+
+
+class CausalSelfAttention(nn.Module):
+    """Multi-head causal self-attention with RoPE, no biases.
+
+    Uses F.scaled_dot_product_attention with is_causal=True (Flash kernel
+    when available).
+    """
+
+    def __init__(self, d_model: int, n_head: int, ctx_len: int, rope_base: float = 10000.0):
+        super().__init__()
+        assert d_model % n_head == 0
+        self.d_model = d_model
+        self.n_head = n_head
+        self.head_dim = d_model // n_head
+        self.ctx_len = ctx_len
+        self.qkv = nn.Linear(d_model, 3 * d_model, bias=False)
+        self.proj = nn.Linear(d_model, d_model, bias=False)
+        cos, sin = precompute_rope(self.head_dim, ctx_len, base=rope_base)
+        self.register_buffer("rope_cos", cos)
+        self.register_buffer("rope_sin", sin)
+
+    def forward(self, x: Tensor) -> Tensor:
+        B, T, _ = x.shape
+        assert T <= self.ctx_len, f"seq len {T} exceeds ctx_len {self.ctx_len}"
+        qkv = self.qkv(x)                                   # (B, T, 3D)
+        q, k, v = qkv.chunk(3, dim=-1)
+        # (B, T, D) → (B, H, T, Dh)
+        q = q.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
+        k = k.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
+        v = v.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
+        q = apply_rope(q, self.rope_cos[:T], self.rope_sin[:T])
+        k = apply_rope(k, self.rope_cos[:T], self.rope_sin[:T])
+        out = F.scaled_dot_product_attention(q, k, v, is_causal=True)  # (B, H, T, Dh)
+        out = out.transpose(1, 2).reshape(B, T, self.d_model)          # (B, T, D)
+        return self.proj(out)

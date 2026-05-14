@@ -2,6 +2,7 @@ import torch
 import pytest
 from nanolgn.gpt import RMSNorm
 from nanolgn.gpt import precompute_rope, apply_rope
+from nanolgn.gpt import CausalSelfAttention
 
 def test_rmsnorm_unit_rms():
     norm = RMSNorm(64)
@@ -33,3 +34,20 @@ def test_rope_zero_position_is_identity():
     x = torch.randn(1, 1, 1, head_dim)   # one token at position 0
     y = apply_rope(x, cos[:1], sin[:1])
     assert torch.allclose(y, x, atol=1e-6)
+
+def test_attention_shape():
+    attn = CausalSelfAttention(d_model=64, n_head=4, ctx_len=32)
+    x = torch.randn(2, 16, 64)
+    y = attn(x)
+    assert y.shape == (2, 16, 64)
+
+def test_attention_is_causal_changing_future_does_not_change_past():
+    torch.manual_seed(0)
+    attn = CausalSelfAttention(d_model=32, n_head=2, ctx_len=8)
+    x = torch.randn(1, 8, 32)
+    y1 = attn(x)
+    x2 = x.clone()
+    x2[:, 5:] = torch.randn(1, 3, 32)   # change positions 5..7
+    y2 = attn(x2)
+    # Positions 0..4 must be unchanged.
+    assert torch.allclose(y1[:, :5], y2[:, :5], atol=1e-5)
