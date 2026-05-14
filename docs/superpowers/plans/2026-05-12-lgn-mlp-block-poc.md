@@ -936,7 +936,7 @@ def test_rope_application_preserves_norm():
     head_dim = 32
     cos, sin = precompute_rope(dim=head_dim, max_len=64, base=10000.0)
     x = torch.randn(2, 4, 7, head_dim)  # (B, H, T, D)
-    y = apply_rope(x, cos, sin)
+    y = apply_rope(x, cos[:7], sin[:7])  # cos/sin sliced to T (apply_rope contract)
     # Rotation preserves L2 norm in each (even, odd) pair.
     assert torch.allclose(y.pow(2).sum(-1), x.pow(2).sum(-1), atol=1e-5)
 
