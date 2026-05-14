@@ -1,7 +1,7 @@
 # tests/test_lgn_mlp.py
 import torch
 import pytest
-from nanolgn.lgn_mlp import ThermometerEncode, GroupSumDecode
+from nanolgn.lgn_mlp import ThermometerEncode, GroupSumDecode, LGNMLPBlock
 
 def test_thermo_shape():
     enc = ThermometerEncode(d_model=128, k=16)
@@ -66,3 +66,29 @@ def test_decode_default_tau_centers_at_zero_for_uniform_half():
 def test_decode_no_learnable_params():
     dec = GroupSumDecode(d_model=8, k=16, tau=16.0)
     assert sum(p.numel() for p in dec.parameters()) == 0
+
+
+def test_block_shape_contract_matches_mlp_slot():
+    block = LGNMLPBlock(d_model=128, k=16, depth=4, tau=16.0, seed=0)
+    x = torch.randn(2, 7, 128)
+    y = block(x)
+    assert y.shape == (2, 7, 128)
+
+def test_block_finite_forward_backward():
+    block = LGNMLPBlock(d_model=64, k=8, depth=3, tau=8.0, seed=0)
+    x = torch.randn(2, 5, 64, requires_grad=True)
+    block(x).sum().backward()
+    assert torch.isfinite(x.grad).all()
+    for p in block.parameters():
+        if p.grad is not None:
+            assert torch.isfinite(p.grad).all()
+
+def test_block_output_is_centered_at_init_for_zero_input():
+    # With x=0, sigmoid output ≈ sigmoid(-theta) ≈ uniform spread; under
+    # residual init each LGNlayer ≈ passthrough; GroupSum then /K and shifts
+    # by -0.5. Just check finiteness and bounded range, not exact zero.
+    block = LGNMLPBlock(d_model=32, k=8, depth=2, tau=8.0, seed=0)
+    x = torch.zeros(1, 4, 32)
+    y = block(x)
+    assert torch.isfinite(y).all()
+    assert y.abs().max() <= 1.0

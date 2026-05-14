@@ -69,3 +69,36 @@ class GroupSumDecode(nn.Module):
         leading = z.shape[:-1]
         z2 = z.reshape(*leading, self.d_model, self.k)  # (..., d, K)
         return z2.sum(dim=-1) / self.tau - 0.5
+
+
+class LGNMLPBlock(nn.Module):
+    """Drop-in replacement for the per-block FFN: continuous → LGN → continuous.
+
+    Same forward shape contract as a standard MLP: (B, T, d) -> (B, T, d).
+    The caller (Block) does the residual add.
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        k: int,
+        depth: int,
+        tau: float,
+        seed: int,
+        residual_init_strength: float = 7.5,
+    ):
+        super().__init__()
+        self.encode = ThermometerEncode(d_model=d_model, k=k)
+        self.body = LGNBody(
+            n=k * d_model,
+            depth=depth,
+            seed=seed,
+            residual_init_strength=residual_init_strength,
+        )
+        self.decode = GroupSumDecode(d_model=d_model, k=k, tau=tau)
+
+    def forward(self, x: Tensor) -> Tensor:
+        b = self.encode(x)         # (B, T, K*d) in (0,1)
+        z = self.body(b)           # (B, T, K*d) in (0,1)
+        y = self.decode(z)         # (B, T, d)   in [-0.5, 0.5]
+        return y
