@@ -115,3 +115,48 @@ class Block(nn.Module):
         x = x + self.attn(self.norm1(x))
         x = x + self.ffn(self.norm2(x))
         return x
+
+
+class GPT(nn.Module):
+    """Minimal nanochat-style GPT.
+
+    - Token embedding (no learned positional; RoPE inside attention).
+    - N pre-norm Blocks with pluggable FFN.
+    - RMSNorm before LM head.
+    - Untied LM head (nanochat convention; weight-tying optional).
+    """
+
+    def __init__(self, cfg, ffn_factory: Callable):
+        super().__init__()
+        self.cfg = cfg
+        self.tok_emb = nn.Embedding(cfg.vocab_size, cfg.d_model)
+        self.blocks = nn.ModuleList(
+            [Block(cfg, ffn_factory=ffn_factory) for _ in range(cfg.n_layer)]
+        )
+        self.norm_out = RMSNorm(cfg.d_model)
+        # Untied LM head; weight-tying optional. nanochat uses untied.
+        self.lm_head = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight, mean=0.0, std=0.02)
+        elif isinstance(m, nn.Embedding):
+            nn.init.normal_(m.weight, mean=0.0, std=0.02)
+
+    def forward(self, idx: Tensor, targets: Tensor | None = None):
+        x = self.tok_emb(idx)                              # (B, T, D)
+        for block in self.blocks:
+            x = block(x)
+        x = self.norm_out(x)
+        logits = self.lm_head(x)                           # (B, T, V)
+        if targets is None:
+            return logits
+        loss = F.cross_entropy(
+            logits.reshape(-1, logits.size(-1)),
+            targets.reshape(-1),
+        )
+        return logits, loss
+
+    def num_params(self) -> int:
+        return sum(p.numel() for p in self.parameters())

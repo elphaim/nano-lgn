@@ -5,6 +5,7 @@ from nanolgn.gpt import precompute_rope, apply_rope
 from nanolgn.gpt import CausalSelfAttention
 from nanolgn.gpt import ReLU2MLP
 from nanolgn.gpt import Block
+from nanolgn.gpt import GPT
 
 def test_rmsnorm_unit_rms():
     norm = RMSNorm(64)
@@ -80,3 +81,41 @@ def test_block_residual_add_with_lgn_factory():
     y = block(x)
     assert y.shape == (2, 4, 32)
     assert torch.isfinite(y).all()
+
+class _CfgMLP:
+    d_model = 32
+    n_layer = 2
+    n_head = 2
+    ctx_len = 16
+    vocab_size = 257
+
+def test_gpt_forward_shape():
+    cfg = _CfgMLP()
+    factory = lambda c: ReLU2MLP(c.d_model, mult=4)
+    gpt = GPT(cfg, ffn_factory=factory)
+    idx = torch.randint(0, cfg.vocab_size, (2, 8))
+    logits = gpt(idx)
+    assert logits.shape == (2, 8, cfg.vocab_size)
+
+def test_gpt_loss_when_targets_provided():
+    cfg = _CfgMLP()
+    factory = lambda c: ReLU2MLP(c.d_model, mult=4)
+    gpt = GPT(cfg, ffn_factory=factory)
+    idx = torch.randint(0, cfg.vocab_size, (2, 8))
+    targets = torch.randint(0, cfg.vocab_size, (2, 8))
+    logits, loss = gpt(idx, targets)
+    assert logits.shape == (2, 8, cfg.vocab_size)
+    assert loss.ndim == 0
+    assert torch.isfinite(loss)
+
+def test_gpt_is_causal_end_to_end():
+    cfg = _CfgMLP()
+    torch.manual_seed(0)
+    factory = lambda c: ReLU2MLP(c.d_model, mult=4)
+    gpt = GPT(cfg, ffn_factory=factory)
+    idx = torch.randint(0, cfg.vocab_size, (1, 8))
+    logits1 = gpt(idx)
+    idx2 = idx.clone()
+    idx2[:, 5:] = torch.randint(0, cfg.vocab_size, (1, 3))
+    logits2 = gpt(idx2)
+    assert torch.allclose(logits1[:, :5], logits2[:, :5], atol=1e-5)
