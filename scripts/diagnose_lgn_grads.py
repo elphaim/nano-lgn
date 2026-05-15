@@ -111,11 +111,11 @@ def discover_params(model: nn.Module) -> dict:
 def make_synthetic_data(vocab_size: int, n_tokens: int, device: torch.device) -> torch.Tensor:
     """Return a 1-D LongTensor of length n_tokens with seq[t] = t % 7.
 
-    Modulated by vocab_size for safety (cfg.vocab_size=50257 >> 7, so this
-    is a no-op in practice, but it makes the function robust to vocab swaps).
+    The `vocab_size` argument is accepted for API symmetry but unused — the
+    `t % 7` sequence only uses tokens 0..6, well below any realistic vocab.
     """
-    raw = [(t % 7) % vocab_size for t in range(n_tokens)]
-    return torch.tensor(raw, dtype=torch.long, device=device)
+    del vocab_size  # accepted for API symmetry, not used
+    return torch.arange(n_tokens, dtype=torch.long, device=device) % 7
 
 
 def _grad_norm(p: nn.Parameter) -> float:
@@ -197,6 +197,9 @@ def main() -> int:
 
     measurements: list[dict] = []
     log_steps = {0} | set(range(10, args.steps + 1, 10))
+    if len(log_steps) == 1:
+        print(f"warning: --steps {args.steps} < 10; only step 0 will be measured "
+              f"(verdict will be degenerate)", file=sys.stderr)
 
     for step in range(args.steps + 1):
         x, y = sample_batch()
