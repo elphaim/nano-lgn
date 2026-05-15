@@ -1550,7 +1550,7 @@ cfg = TransformerCfg(
     d_model=128, n_layer=4, n_head=4, ctx_len=256,
     vocab_size=50257, ffn="lgn", seed=0,
 )
-lgn = LGNCfg(K=16, L=4, tau=16.0, residual_init_strength=5.0)
+lgn = LGNCfg(K=16, L=4, tau=16.0)  # residual_init_strength defaults to s=7.5
 
 batch_size = 32
 max_steps = 5000
@@ -1602,7 +1602,7 @@ cfg = TransformerCfg(
     d_model=256, n_layer=6, n_head=4, ctx_len=512,
     vocab_size=50257, ffn="lgn", seed=0,
 )
-lgn = LGNCfg(K=32, L=6, tau=32.0, residual_init_strength=5.0)
+lgn = LGNCfg(K=32, L=6, tau=32.0)  # residual_init_strength defaults to s=7.5
 
 batch_size = 16
 max_steps = 20000
