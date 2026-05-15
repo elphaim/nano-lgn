@@ -159,7 +159,7 @@ def compute_grad_metrics(groups: dict) -> dict:
 def format_trajectory_table(measurements: list[dict]) -> str:
     """Table 1: per-step trajectory of gradient norms and loss."""
     header = (
-        " step | loss   | |∇W|    | |∇attn| | |∇embed| | |∇head| | W/attn\n"
+        " step | loss   | |∇W|     | |∇attn|  | |∇embed| | |∇head|  | W/attn\n"
         "------+--------+----------+----------+-----------+----------+----------"
     )
     rows = []
@@ -177,7 +177,7 @@ def format_per_block_table(measurements: list[dict]) -> str:
     """Table 2: per-block |grad W| at first and last measurement."""
     first, last = measurements[0], measurements[-1]
     header = (
-        f" block | |∇W| @ step {first['step']:<4} | |∇W| @ step {last['step']:<4} | ratio (last/first)\n"
+        f" block | |∇W| @ step {first['step']:<4}     | |∇W| @ step {last['step']:<4}     | ratio (last/first)\n"
         "-------+----------------------+----------------------+--------------------"
     )
     rows = []
@@ -209,7 +209,7 @@ def format_verdict(measurements: list[dict]) -> str:
         "=== VERDICT ===\n"
         f"ratio(step {first['step']:<4}):  {r0:.2e}\n"
         f"ratio(step {last['step']:<4}):  {r1:.2e}  (>= 2x first? {ratio_ok})\n"
-        f"|∇W|(step {last['step']:<4}): {grad_W_last:.2e}  (> 1e-7? {grad_ok})\n"
+        f"|∇W|(step  {last['step']:<4}):  {grad_W_last:.2e}  (> 1e-7? {grad_ok})\n"
         f"LIKELY LEARNING:    {likely_learning}"
     )
 
@@ -273,10 +273,6 @@ def main() -> int:
             measurements.append(m)
 
         opt.step()
-
-    if not measurements:
-        print("no measurements (steps=0)")
-        return 0
 
     print()
     print(format_trajectory_table(measurements))
