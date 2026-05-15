@@ -5,7 +5,7 @@ cfg = TransformerCfg(
     d_model=128, n_layer=4, n_head=4, ctx_len=256,
     vocab_size=50257, ffn="lgn", seed=0,
 )
-lgn = LGNCfg(K=16, L=4, tau=16.0)  # residual_init_strength defaults to s=7.5
+lgn = LGNCfg(K=16, L=4, tau=16.0, residual_init_strength=3.5)  # was 7.5; lowered to de-saturate gates after diagnostic showed LIKELY LEARNING=NO
 
 batch_size = 32
 max_steps = 5000
