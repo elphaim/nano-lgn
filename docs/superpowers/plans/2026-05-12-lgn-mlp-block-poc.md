@@ -2330,17 +2330,21 @@ the TinyStories script before running `python scripts/train.py poc_b_lgn`.
 
 ## Running the tests
 
-Fast suite (skips smoke training):
+Full suite (includes the smoke training test, ~8s on CPU):
 
 ```bash
 pytest -q
 ```
 
-Including the smoke training test:
+Smoke training test only:
 
 ```bash
 pytest -q -m slow
 ```
+
+Note: the `slow` marker is registered but is **not** auto-deselected from
+the default run. To skip slow tests by default, add
+`addopts = "-m 'not slow'"` to `[tool.pytest.ini_options]` in `pyproject.toml`.
 ```
 
 - [ ] **Step 2: Commit**
