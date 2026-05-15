@@ -18,3 +18,16 @@ pytest
 
 Full data prep, training, and eval instructions are added at the end of the
 implementation plan.
+
+## Data preparation
+
+POC-A uses TinyStories. To download and tokenize:
+
+```bash
+python scripts/prepare_tinystories.py
+```
+
+This writes `data/tinystories_train.bin` and `data/tinystories_val.bin`,
+each a flat uint16 sequence of GPT-2 BPE tokens. ~30 minutes on a fast disk.
+
+POC-B uses FineWeb-edu — script analogous, not in scope for the POC.
