@@ -100,7 +100,11 @@ class ReLU2MLP(nn.Module):
 
 
 class Block(nn.Module):
-    """Pre-norm transformer block with a pluggable FFN factory."""
+    """Pre-norm transformer block with a pluggable FFN factory.
+
+    If `cache_ffn_out` is True, `last_ffn_out` holds the most recent FFN output
+    (detached, on-device). Used for early-training diagnostic logging.
+    """
 
     def __init__(self, cfg, ffn_factory: Callable):
         super().__init__()
@@ -110,10 +114,15 @@ class Block(nn.Module):
         )
         self.norm2 = RMSNorm(cfg.d_model)
         self.ffn = ffn_factory(cfg)
+        self.cache_ffn_out: bool = False
+        self.last_ffn_out: Tensor | None = None
 
     def forward(self, x: Tensor) -> Tensor:
         x = x + self.attn(self.norm1(x))
-        x = x + self.ffn(self.norm2(x))
+        ffn_out = self.ffn(self.norm2(x))
+        if self.cache_ffn_out:
+            self.last_ffn_out = ffn_out.detach()
+        x = x + ffn_out
         return x
 
 

@@ -90,6 +90,13 @@ def main() -> int:
         weight_decay=cfg_mod.weight_decay,
     )
 
+    # Enable per-block FFN-out caching only while we're collecting stats.
+    from nanolgn.lgn_mlp import LGNMLPBlock, lgn_block_stats
+    is_lgn = cfg_mod.lgn is not None
+    if is_lgn:
+        for block in model.blocks:
+            block.cache_ffn_out = True
+
     train_iter = iter(train_loader)
     t0 = time.time()
     for step in range(cfg_mod.max_steps):
@@ -106,6 +113,19 @@ def main() -> int:
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), cfg_mod.grad_clip)
         opt.step()
+
+        if is_lgn and step < cfg_mod.log_block_stats_until and step % cfg_mod.log_every == 0:
+            for i, block in enumerate(model.blocks):
+                if isinstance(block.ffn, LGNMLPBlock) and block.last_ffn_out is not None:
+                    s = lgn_block_stats(block.ffn, block.last_ffn_out)
+                    print(f"    block {i}: norm={s['ffn_out_norm_mean']:.3f} "
+                          f"max={s['ffn_out_max']:.3f} "
+                          f"H(p)={s['gate_entropy_mean']:.3f} "
+                          f"theta_in_range={s['threshold_in_range_frac']:.2f}")
+        if is_lgn and step == cfg_mod.log_block_stats_until:
+            for block in model.blocks:
+                block.cache_ffn_out = False
+                block.last_ffn_out = None
 
         if step % cfg_mod.log_every == 0:
             elapsed = time.time() - t0

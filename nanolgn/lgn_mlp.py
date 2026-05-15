@@ -102,3 +102,40 @@ class LGNMLPBlock(nn.Module):
         z = self.body(b)           # (B, T, K*d) in (0,1)
         y = self.decode(z)         # (B, T, d)   in [-0.5, 0.5]
         return y
+
+
+@torch.no_grad()
+def lgn_block_stats(block: "LGNMLPBlock", last_ffn_out: Tensor) -> dict:
+    """Collect early-warning diagnostics for one LGN-MLP block.
+
+    Args:
+        block: the LGNMLPBlock instance.
+        last_ffn_out: the (B, T, d) tensor returned by the most recent forward.
+
+    Returns dict with keys:
+        ffn_out_norm_mean : float — mean L2 norm per token
+        ffn_out_max       : float — max abs value
+        gate_entropy_mean : float — mean entropy of softmax(W) across all neurons (nats)
+        threshold_in_range_frac : float — fraction of (theta_{i,k}) that lie within
+            ±3 of zero (i.e. plausibly active for typical RMS-normed inputs).
+    """
+    out = last_ffn_out
+    norm = out.flatten(0, -2).norm(dim=-1).mean().item()
+    omax = out.abs().max().item()
+
+    entropies = []
+    for layer in block.body.layers:
+        p = torch.softmax(layer.W, dim=-1)
+        h = -(p * (p.clamp_min(1e-12).log())).sum(dim=-1)   # (n,)
+        entropies.append(h.mean().item())
+    gate_entropy_mean = sum(entropies) / max(1, len(entropies))
+
+    theta = block.encode.theta
+    in_range = ((theta.abs() <= 3.0).float()).mean().item()
+
+    return {
+        "ffn_out_norm_mean": norm,
+        "ffn_out_max": omax,
+        "gate_entropy_mean": gate_entropy_mean,
+        "threshold_in_range_frac": in_range,
+    }
