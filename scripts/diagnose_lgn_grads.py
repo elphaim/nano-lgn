@@ -27,7 +27,6 @@ Defaults: --steps 200, --seed 0, --device autodetect (cuda if available).
 from __future__ import annotations
 import argparse
 import sys
-from typing import Iterable
 
 import numpy as np
 import torch
