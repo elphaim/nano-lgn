@@ -2271,10 +2271,15 @@ markers = [
 Run: `pytest -m slow tests/test_smoke_train.py -v`
 Expected: 1 passed (takes ~10–60s on CPU).
 
-- [ ] **Step 3: Verify it is skipped by default**
+- [ ] **Step 3: Verify the smoke test runs alongside the fast suite**
 
 Run: `pytest -q`
-Expected: previous test count + `1 deselected`.
+Expected: previous test count + 1 (smoke test runs, ~8s total).
+
+Note: registering the `slow` marker only validates the name (silences pytest's
+"unknown marker" warning under `--strict-markers`); it does not auto-deselect.
+To skip slow by default in the future, add `addopts = "-m 'not slow'"` to the
+`[tool.pytest.ini_options]` block. Out of scope here.
 
 - [ ] **Step 4: Commit**
 
