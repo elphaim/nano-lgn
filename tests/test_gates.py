@@ -1,7 +1,7 @@
 # tests/test_gates.py
 import torch
 import pytest
-from nanolgn.gates import GATE_NAMES, gate, GATE_FNS
+from nanolgn.gates import GATE_NAMES, gate, GATE_FNS, GATE_COEFFS
 
 CORNERS = [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)]
 
@@ -55,3 +55,17 @@ def test_gates_are_vectorized():
         assert out.shape == (3, 5)
         assert torch.all(out >= 0.0 - 1e-6)
         assert torch.all(out <= 1.0 + 1e-6)
+
+
+def test_gate_coeffs_reproduce_each_gate():
+    """For every gate g, α + β·a + γ·b + δ·a·b must equal GATE_FNS[g](a, b)."""
+    coeffs = torch.tensor(GATE_COEFFS)
+    assert coeffs.shape == (16, 4)
+    torch.manual_seed(0)
+    a = torch.rand(64)
+    b = torch.rand(64)
+    for g_idx in range(16):
+        alpha, beta, gamma, delta = coeffs[g_idx].tolist()
+        got = alpha + beta * a + gamma * b + delta * a * b
+        expected = GATE_FNS[g_idx](a, b)
+        assert torch.allclose(got, expected, atol=1e-6), f"{GATE_NAMES[g_idx]}"

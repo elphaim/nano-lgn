@@ -10,7 +10,7 @@ from __future__ import annotations
 import torch
 from torch import nn, Tensor
 
-from .gates import all_gates_stack, GATE_A_INDEX
+from .gates import GATE_A_INDEX, GATE_COEFFS
 
 
 class LogicLayer(nn.Module):
@@ -36,6 +36,9 @@ class LogicLayer(nn.Module):
         self.register_buffer("pi_a", pi_a)
         self.register_buffer("pi_b", pi_b)
 
+        # Multilinear coefficients per gate (α, β, γ, δ); see gates.GATE_COEFFS.
+        self.register_buffer("gate_coeffs", torch.tensor(GATE_COEFFS, dtype=torch.float32))
+
         # Gate-mixture logits, one row per output neuron. Residual init: gate
         # "A" gets a strong logit; the rest stay at 0.
         W = torch.zeros(n, 16)
@@ -43,14 +46,19 @@ class LogicLayer(nn.Module):
         self.W = nn.Parameter(W)
 
     def forward(self, x: Tensor) -> Tensor:
-        """x: (..., n) in [0,1]. Returns (..., n) in [0,1]."""
-        a = x.index_select(-1, self.pi_a)        # (..., n)
-        b = x.index_select(-1, self.pi_b)        # (..., n)
-        gates = all_gates_stack(a, b)            # (..., n, 16)
-        p = torch.softmax(self.W, dim=-1)        # (n, 16)
-        # Broadcast p across leading dims; sum over the gate dim.
-        out = (gates * p).sum(dim=-1)            # (..., n)
-        return out
+        """x: (..., n) in [0,1]. Returns (..., n) in [0,1].
+
+        Polynomial form: Σ_g p_g · gate_g(a, b) = α + β·a + γ·b + δ·a·b, where
+        (α, β, γ, δ) = p @ GATE_COEFFS. Mathematically identical to
+        (all_gates_stack(a, b) * p).sum(-1), but never materializes the
+        (..., n, 16) stack — the dominant activation cost on the old path.
+        """
+        a = x.index_select(-1, self.pi_a)                    # (..., n)
+        b = x.index_select(-1, self.pi_b)                    # (..., n)
+        p = torch.softmax(self.W, dim=-1)                    # (n, 16)
+        coeffs = p @ self.gate_coeffs                        # (n, 4)
+        alpha, beta, gamma, delta = coeffs.unbind(dim=-1)    # each (n,)
+        return alpha + beta * a + gamma * b + delta * (a * b)
 
 
 class LGNBody(nn.Module):

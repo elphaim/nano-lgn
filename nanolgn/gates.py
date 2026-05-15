@@ -59,6 +59,29 @@ GATE_FNS = (
 
 GATE_A_INDEX = 3  # passthrough on input a — used by residual-init in LogicLayer.
 
+# Coefficients (α, β, γ, δ) such that gate_g(a, b) = α + β·a + γ·b + δ·a·b.
+# Every binary gate is multilinear of degree ≤ 2 on (a, b), so the softmax
+# mixture Σ_g p_g · gate_g collapses to (Σ p_g α_g) + (Σ p_g β_g)·a + …,
+# letting LogicLayer skip the (..., n, 16) stack. Same ordering as GATE_FNS.
+GATE_COEFFS: tuple[tuple[float, float, float, float], ...] = (
+    (0.0,  0.0,  0.0,  0.0),   # FALSE
+    (0.0,  0.0,  0.0,  1.0),   # AND
+    (0.0,  1.0,  0.0, -1.0),   # A_AND_NB
+    (0.0,  1.0,  0.0,  0.0),   # A
+    (0.0,  0.0,  1.0, -1.0),   # NA_AND_B
+    (0.0,  0.0,  1.0,  0.0),   # B
+    (0.0,  1.0,  1.0, -2.0),   # XOR
+    (0.0,  1.0,  1.0, -1.0),   # OR
+    (1.0, -1.0, -1.0,  1.0),   # NOR
+    (1.0, -1.0, -1.0,  2.0),   # XNOR
+    (1.0,  0.0, -1.0,  0.0),   # NB
+    (1.0,  0.0, -1.0,  1.0),   # A_OR_NB
+    (1.0, -1.0,  0.0,  0.0),   # NA
+    (1.0, -1.0,  0.0,  1.0),   # NA_OR_B
+    (1.0,  0.0,  0.0, -1.0),   # NAND
+    (1.0,  0.0,  0.0,  0.0),   # TRUE
+)
+
 def gate(idx: int, a: Tensor, b: Tensor) -> Tensor:
     """Dispatch wrapper: gate(idx, a, b) = GATE_FNS[idx](a, b)."""
     return GATE_FNS[idx](a, b)

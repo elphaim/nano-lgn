@@ -44,6 +44,17 @@ def test_thermo_param_count_is_dK_plus_K():
     assert n == d * k + k
 
 
+def test_thermo_output_dtype_follows_input():
+    """Under autocast(bf16) the input arrives as bf16 but params stay fp32; the
+    encoder must cast back to the input dtype or the entire LGN body runs in
+    fp32 and quadruples activation memory."""
+    enc = ThermometerEncode(d_model=8, k=4)
+    x_bf16 = torch.randn(2, 8, dtype=torch.bfloat16)
+    assert enc(x_bf16).dtype == torch.bfloat16
+    x_fp32 = torch.randn(2, 8, dtype=torch.float32)
+    assert enc(x_fp32).dtype == torch.float32
+
+
 def test_decode_shape_and_grouping():
     dec = GroupSumDecode(d_model=4, k=3, tau=3.0)
     # Build z so each group sums to a known value:

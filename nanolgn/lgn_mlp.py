@@ -47,8 +47,11 @@ class ThermometerEncode(nn.Module):
         x_e = x.unsqueeze(-1)                          # (..., d, 1)
         # theta: (d, K) → broadcasts cleanly.
         # s: (K,) → broadcasts cleanly.
+        # Params are fp32 even under autocast(bf16), which would otherwise
+        # promote the entire LGN body to fp32 and quadruple activation memory.
+        # Cast back to x's dtype to keep the body in the autocast dtype.
         b = torch.sigmoid(self.s * (x_e - self.theta))  # (..., d, K)
-        return b.flatten(-2)                           # (..., d*K)
+        return b.flatten(-2).to(x.dtype)               # (..., d*K)
 
 
 class GroupSumDecode(nn.Module):

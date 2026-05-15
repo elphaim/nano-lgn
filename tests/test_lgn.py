@@ -92,3 +92,20 @@ def test_lgn_body_gradients_flow_to_all_W():
     for layer in body.layers:
         assert layer.W.grad is not None
         assert torch.isfinite(layer.W.grad).all()
+
+
+def test_logiclayer_polynomial_matches_explicit_stack_form():
+    """Polynomial form must equal (all_gates_stack(a,b) * softmax(W)).sum(-1)."""
+    from nanolgn.gates import all_gates_stack
+    n = 64
+    layer = _make(n=n, seed=42)
+    # Perturb W so we exercise a non-degenerate softmax.
+    with torch.no_grad():
+        layer.W.add_(torch.randn_like(layer.W))
+    x = torch.rand(2, 5, n)
+    y_poly = layer(x)
+    a = x.index_select(-1, layer.pi_a)
+    b = x.index_select(-1, layer.pi_b)
+    p = torch.softmax(layer.W, dim=-1)
+    y_ref = (all_gates_stack(a, b) * p).sum(dim=-1)
+    assert torch.allclose(y_poly, y_ref, atol=1e-6)
