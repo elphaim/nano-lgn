@@ -156,6 +156,64 @@ def compute_grad_metrics(groups: dict) -> dict:
     }
 
 
+def format_trajectory_table(measurements: list[dict]) -> str:
+    """Table 1: per-step trajectory of gradient norms and loss."""
+    header = (
+        " step | loss   | |∇W|    | |∇attn| | |∇embed| | |∇head| | W/attn\n"
+        "------+--------+----------+----------+-----------+----------+----------"
+    )
+    rows = []
+    for m in measurements:
+        rows.append(
+            f" {m['step']:>4} | {m['loss']:>6.3f} | "
+            f"{m['grad_W']:.2e} | {m['grad_attn']:.2e} | "
+            f"{m['grad_embed']:.2e}  | {m['grad_lm_head']:.2e} | "
+            f"{m['ratio']:.2e}"
+        )
+    return header + "\n" + "\n".join(rows)
+
+
+def format_per_block_table(measurements: list[dict]) -> str:
+    """Table 2: per-block |grad W| at first and last measurement."""
+    first, last = measurements[0], measurements[-1]
+    header = (
+        f" block | |∇W| @ step {first['step']:<4} | |∇W| @ step {last['step']:<4} | ratio (last/first)\n"
+        "-------+----------------------+----------------------+--------------------"
+    )
+    rows = []
+    for i, (g0, g1) in enumerate(zip(first["grad_W_per_block"], last["grad_W_per_block"])):
+        r = (g1 / g0) if g0 > 0 else float("inf")
+        rows.append(
+            f"   {i:>3} | {g0:.2e}             | {g1:.2e}             | {r:.2e}"
+        )
+    return header + "\n" + "\n".join(rows)
+
+
+def format_verdict(measurements: list[dict]) -> str:
+    """Heuristic verdict: LIKELY LEARNING == YES iff BOTH conditions hold.
+
+    - ratio(last step) >= 2 * ratio(step 0):     gap closing (gates de-saturating)
+    - grad_W(last step) > 1e-7:                  signal is non-trivial
+
+    Otherwise: LIKELY LEARNING == NO. This is a flag, not proof of failure;
+    a NO verdict could mean "needs longer," "needs different LR," or
+    "needs a task with stronger long-range structure."
+    """
+    first, last = measurements[0], measurements[-1]
+    r0, r1 = first["ratio"], last["ratio"]
+    grad_W_last = last["grad_W"]
+    ratio_ok = r1 >= 2.0 * r0
+    grad_ok = grad_W_last > 1e-7
+    likely_learning = "YES" if (ratio_ok and grad_ok) else "NO"
+    return (
+        "=== VERDICT ===\n"
+        f"ratio(step {first['step']:<4}):  {r0:.2e}\n"
+        f"ratio(step {last['step']:<4}):  {r1:.2e}  (>= 2x first? {ratio_ok})\n"
+        f"|∇W|(step {last['step']:<4}): {grad_W_last:.2e}  (> 1e-7? {grad_ok})\n"
+        f"LIKELY LEARNING:    {likely_learning}"
+    )
+
+
 def main() -> int:
     args = parse_args()
     device = resolve_device(args.device)
@@ -216,10 +274,16 @@ def main() -> int:
 
         opt.step()
 
-    # Temporary diagnostic print (replaced by formatted tables in Task 3):
-    for m in measurements:
-        print(m)
+    if not measurements:
+        print("no measurements (steps=0)")
+        return 0
 
+    print()
+    print(format_trajectory_table(measurements))
+    print()
+    print(format_per_block_table(measurements))
+    print()
+    print(format_verdict(measurements))
     return 0
 
 
