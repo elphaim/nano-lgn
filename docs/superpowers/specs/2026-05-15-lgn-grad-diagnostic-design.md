@@ -9,7 +9,7 @@
 POC-A finished with LGN val_loss = 2.7874 vs MLP val_loss = 2.5404 (+9.72 %, past
 the Stretch criterion). However, the Task 20 smoke-test review found that at
 `residual_init_strength = 7.5`, `|grad LogicLayer.W|` is ~10³–10⁴× smaller than
-`|grad attn.c_attn.weight|` at step 0 — the expected consequence of softmax
+`|grad attn.qkv.weight|` at step 0 — the expected consequence of softmax
 saturation (`p_A ≈ 0.9918`, so `∂p / ∂W` has a factor of `p_A·(1-p_A) ≈ 0.008`,
 ~125× intrinsic shrinkage on top of upstream-gradient differences).
 
@@ -48,7 +48,7 @@ from configs.poc_a_lgn import cfg, lgn
 ```
 
 This gives `d_model=128, n_layer=4, n_head=4, ctx_len=256, vocab_size=50257`,
-`K=8, L=4, tau=4.0, residual_init_strength=7.5`. No shape overrides — fidelity
+`K=16, L=4, tau=16.0, residual_init_strength=7.5`. No shape overrides — fidelity
 to the configuration we're judging matters more than diagnostic speed.
 
 ### Data
@@ -90,8 +90,8 @@ under `torch.no_grad()`:
 |---|---|
 | `grad_W` | **Mean across the 16 `LogicLayer.W` tensors** (4 blocks × 4 LGN layers) of `‖W.grad‖₂`. Mean-of-norms, not norm-of-concatenation — keeps it apples-to-apples with `grad_attn`. |
 | `grad_W_per_block[i]` | Mean across the 4 `LogicLayer.W` tensors within block `i` of `‖W.grad‖₂`. List of 4 floats. |
-| `grad_attn` | Mean across the 4 blocks of `‖block.attn.c_attn.weight.grad‖₂`. The canonical "normal Linear weight" comparator. |
-| `grad_embed` | `‖wte.weight.grad‖₂` — single tensor. |
+| `grad_attn` | Mean across the 4 blocks of `‖block.attn.qkv.weight.grad‖₂`. The canonical "normal Linear weight" comparator. |
+| `grad_embed` | `‖tok_emb.weight.grad‖₂` — single tensor. |
 | `grad_lm_head` | `‖lm_head.weight.grad‖₂` — single tensor. |
 | `ratio` | `grad_W / grad_attn` — the headline number. |
 | `loss` | Current training loss (sanity check). |
@@ -100,8 +100,8 @@ All norms are computed in fp32 regardless of autocast dtype (cast `.grad` to
 fp32 before `.norm()`). Use `torch.linalg.vector_norm` on the flattened tensor
 to be explicit about the operation.
 
-**Note on units:** `W` has shape `(N, 16)` where `N = K·d_model = 1024`, while
-`attn.c_attn.weight` has shape `(3·d_model, d_model) = (384, 128)`. The two
+**Note on units:** `W` has shape `(N, 16)` where `N = K·d_model = 2048`, while
+`attn.qkv.weight` has shape `(3·d_model, d_model) = (384, 128)`. The two
 tensors are not the same size, so the absolute value of the ratio is not by
 itself meaningful — what matters is whether `ratio(last)/ratio(first) ≥ 2`,
 which is invariant to constant scaling and captures gate de-saturation.
@@ -111,9 +111,12 @@ parameter names. The expected name patterns are:
 
 - LGN-W: `blocks.{i}.ffn.body.layers.{j}.W` (where the body is the
   `LGNBody` inside `LGNMLPBlock`).
-- Attn: `blocks.{i}.attn.c_attn.weight`.
-- Embed: `wte.weight`.
+- Attn: `blocks.{i}.attn.qkv.weight`.
+- Embed: `tok_emb.weight`.
 - Head: `lm_head.weight`.
+
+(These names are taken from a live `GPT` instance built from `configs.poc_a_lgn`
+— this codebase uses `tok_emb` / `qkv`, not the nanochat-style `wte` / `c_attn`.)
 
 The script asserts at startup that it finds the expected number of each
 (16 W tensors, 4 attn tensors, 1 embed, 1 head). Failure to find any is a
