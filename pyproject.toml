@@ -1,5 +1,5 @@
 [project]
-name = "nanolgn"
+name = "nano-lgn"
 version = "0.0.1"
 description = "Replacing nanochat's MLP block with a Differentiable Logic Gate Network."
 requires-python = ">=3.11"
