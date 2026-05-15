@@ -169,7 +169,7 @@ def discover_params(model: nn.Module) -> dict:
 
 Run:
 ```bash
-.venv/bin/python scripts/diagnose_lgn_grads.py --steps 0 --device cpu
+.venv/bin/python -m scripts.diagnose_lgn_grads --steps 0 --device cpu
 ```
 
 Expected stdout (param count and total may shift if model changes; the key
@@ -338,7 +338,7 @@ Run a short sanity loop (CPU is fine for shape verification; this is slow
 but only 3 iterations):
 
 ```bash
-.venv/bin/python scripts/diagnose_lgn_grads.py --steps 0 --device cpu
+.venv/bin/python -m scripts.diagnose_lgn_grads --steps 0 --device cpu
 ```
 
 Expected: prints the param header lines then exits cleanly with no
@@ -347,7 +347,7 @@ measurements (since `args.steps <= 0` returns early).
 Then run a tiny-but-measuring sanity:
 
 ```bash
-.venv/bin/python scripts/diagnose_lgn_grads.py --steps 10 --device cpu
+.venv/bin/python -m scripts.diagnose_lgn_grads --steps 10 --device cpu
 ```
 
 Expected stdout to include 2 measurement dicts (step 0 and step 10), each
@@ -472,7 +472,7 @@ Run a short end-to-end on CPU to confirm formatting (still slow but only
 3 measurements):
 
 ```bash
-.venv/bin/python scripts/diagnose_lgn_grads.py --steps 20 --device cpu
+.venv/bin/python -m scripts.diagnose_lgn_grads --steps 20 --device cpu
 ```
 
 Expected stdout (numeric values will vary; structure must match):
@@ -534,7 +534,7 @@ git commit -m "feat(diagnostic): formatted output tables + heuristic verdict"
 
 After Task 3 commits cleanly:
 
-1. `python scripts/diagnose_lgn_grads.py --steps 200` runs on a T4 in under
+1. `.venv/bin/python -m scripts.diagnose_lgn_grads --steps 200` runs on a T4 in under
    3 minutes and prints both tables + a verdict line.
 2. `--device cpu` runs (slowly but correctly) on a machine without a GPU.
 3. Renaming any of `blocks.{i}.ffn.body.layers.{j}.W`, `blocks.{i}.attn.qkv.weight`,
