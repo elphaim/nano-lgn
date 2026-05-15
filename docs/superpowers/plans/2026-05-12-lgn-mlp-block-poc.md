@@ -2162,7 +2162,7 @@ def test_lgn_block_stats_returns_expected_keys():
         d_model=32, n_layer=1, n_head=2, ctx_len=8,
         vocab_size=257, ffn="lgn", seed=0,
     )
-    lgn = LGNCfg(K=4, L=2, tau=4.0, residual_init_strength=5.0)
+    lgn = LGNCfg(K=4, L=2, tau=4.0)  # residual_init_strength defaults to s=7.5
     model = GPT(cfg, ffn_factory=make_ffn_factory(cfg, lgn=lgn))
     block = model.blocks[0]
     block.cache_ffn_out = True
@@ -2225,7 +2225,7 @@ def test_lgn_model_trains_on_synthetic_data():
         d_model=32, n_layer=2, n_head=2, ctx_len=16,
         vocab_size=64, ffn="lgn", seed=0,
     )
-    lgn = LGNCfg(K=4, L=2, tau=4.0, residual_init_strength=5.0)
+    lgn = LGNCfg(K=4, L=2, tau=4.0)  # residual_init_strength defaults to s=7.5
     model = GPT(cfg, ffn_factory=make_ffn_factory(cfg, lgn=lgn))
 
     # Synthetic data: a simple repeating pattern the model should learn fast.
