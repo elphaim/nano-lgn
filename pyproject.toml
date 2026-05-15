@@ -24,3 +24,6 @@ packages = ["nanolgn"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "slow: end-to-end smoke training; opt in with -m slow",
+]
