@@ -66,42 +66,60 @@ class LogicLayer(nn.Module):
         residual_init_strength: logit applied to gate "A" (passthrough on a)
             at init. softmax([s, 0, ..., 0])[A] = e^s / (e^s + 15);
             s=7.5 → ≈ 0.9918 (leakage ≈ 0.0082 across the other 15 gates).
+        interconnect: "fixed" (default) uses random pi_a/pi_b buffers;
+            "topk" uses a learnable Top-K softmax router.
+        topk: K candidates per pair-slot when interconnect="topk".
+        c_sparsity: softmax temperature on the router logits.
     """
 
-    def __init__(self, n: int, seed: int, residual_init_strength: float = 7.5):
+    def __init__(
+        self,
+        n: int,
+        seed: int,
+        residual_init_strength: float = 7.5,
+        interconnect: str = "fixed",
+        topk: int = 8,
+        c_sparsity: float = 1.0,
+    ):
         super().__init__()
+        if interconnect not in ("fixed", "topk"):
+            raise ValueError(f"interconnect must be 'fixed' or 'topk', got {interconnect!r}")
         self.n = n
         self.residual_init_strength = float(residual_init_strength)
+        self.interconnect_kind = interconnect
 
-        # Fixed random connections, deterministic in seed.
-        gen = torch.Generator(device="cpu").manual_seed(seed)
-        pi_a = torch.randint(0, n, (n,), generator=gen, dtype=torch.long)
-        pi_b = torch.randint(0, n, (n,), generator=gen, dtype=torch.long)
-        self.register_buffer("pi_a", pi_a)
-        self.register_buffer("pi_b", pi_b)
+        if interconnect == "fixed":
+            gen = torch.Generator(device="cpu").manual_seed(seed)
+            pi_a = torch.randint(0, n, (n,), generator=gen, dtype=torch.long)
+            pi_b = torch.randint(0, n, (n,), generator=gen, dtype=torch.long)
+            self.register_buffer("pi_a", pi_a)
+            self.register_buffer("pi_b", pi_b)
+        else:
+            self.interconnect = LearnableTopKInterconnect(
+                n_in=n, n_out=n, topk=topk, c_sparsity=c_sparsity, seed=seed,
+            )
 
-        # Multilinear coefficients per gate (α, β, γ, δ); see gates.GATE_COEFFS.
         self.register_buffer("gate_coeffs", torch.tensor(GATE_COEFFS, dtype=torch.float32))
 
-        # Gate-mixture logits, one row per output neuron. Residual init: gate
-        # "A" gets a strong logit; the rest stay at 0.
         W = torch.zeros(n, 16)
         W[:, GATE_A_INDEX] = self.residual_init_strength
         self.W = nn.Parameter(W)
 
-    def forward(self, x: Tensor) -> Tensor:
-        """x: (..., n) in [0,1]. Returns (..., n) in [0,1].
+    def _route(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        if self.interconnect_kind == "fixed":
+            a = x.index_select(-1, self.pi_a)
+            b = x.index_select(-1, self.pi_b)
+            return a, b
+        pair = self.interconnect(x)                          # (..., 2n)
+        a, b = pair[..., : self.n], pair[..., self.n :]
+        return a, b
 
-        Polynomial form: Σ_g p_g · gate_g(a, b) = α + β·a + γ·b + δ·a·b, where
-        (α, β, γ, δ) = p @ GATE_COEFFS. Mathematically identical to
-        (all_gates_stack(a, b) * p).sum(-1), but never materializes the
-        (..., n, 16) stack — the dominant activation cost on the old path.
-        """
-        a = x.index_select(-1, self.pi_a)                    # (..., n)
-        b = x.index_select(-1, self.pi_b)                    # (..., n)
+    def forward(self, x: Tensor) -> Tensor:
+        """x: (..., n) in [0,1]. Returns (..., n) in [0,1]."""
+        a, b = self._route(x)
         p = torch.softmax(self.W, dim=-1)                    # (n, 16)
         coeffs = p @ self.gate_coeffs                        # (n, 4)
-        alpha, beta, gamma, delta = coeffs.unbind(dim=-1)    # each (n,)
+        alpha, beta, gamma, delta = coeffs.unbind(dim=-1)
         return alpha + beta * a + gamma * b + delta * (a * b)
 
 

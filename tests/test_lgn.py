@@ -213,3 +213,50 @@ def test_topk_interconnect_c_sparsity_changes_forward_output():
     y_lo = ic_lo(x)
     y_hi = ic_hi(x)
     assert not torch.allclose(y_lo, y_hi, atol=1e-4)
+
+
+def test_logic_layer_default_is_fixed_routing():
+    layer = LogicLayer(n=64, seed=0)
+    # Fixed routing keeps pi_a, pi_b buffers and does not register top_c.
+    buffer_names = {name for name, _ in layer.named_buffers()}
+    param_names = {name for name, _ in layer.named_parameters()}
+    assert "pi_a" in buffer_names
+    assert "pi_b" in buffer_names
+    assert "interconnect.top_c" not in param_names
+
+
+def test_logic_layer_topk_routing_shape():
+    layer = LogicLayer(n=64, seed=0, interconnect="topk", topk=4, c_sparsity=1.0)
+    x = torch.rand(2, 7, 64)
+    y = layer(x)
+    assert y.shape == (2, 7, 64)
+
+
+def test_logic_layer_topk_routing_output_in_unit_interval():
+    layer = LogicLayer(n=128, seed=0, interconnect="topk", topk=4, c_sparsity=1.0)
+    x = torch.rand(4, 5, 128)
+    y = layer(x)
+    assert torch.all(y >= -1e-5)
+    assert torch.all(y <= 1.0 + 1e-5)
+
+
+def test_logic_layer_topk_finite_backward_to_both_W_and_top_c():
+    layer = LogicLayer(n=64, seed=0, interconnect="topk", topk=4, c_sparsity=1.0)
+    x = torch.rand(2, 3, 64, requires_grad=True)
+    y = layer(x).sum()
+    y.backward()
+    assert torch.isfinite(y)
+    assert torch.isfinite(layer.W.grad).all()
+    assert torch.isfinite(layer.interconnect.top_c.grad).all()
+
+
+def test_logic_layer_topk_param_set_includes_top_c():
+    layer = LogicLayer(n=64, seed=0, interconnect="topk", topk=4)
+    param_names = {name for name, _ in layer.named_parameters()}
+    assert "W" in param_names
+    assert "interconnect.top_c" in param_names
+
+
+def test_logic_layer_topk_rejects_invalid_interconnect_value():
+    with pytest.raises(ValueError):
+        LogicLayer(n=64, seed=0, interconnect="bogus")
