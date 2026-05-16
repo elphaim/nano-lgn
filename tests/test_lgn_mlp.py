@@ -103,3 +103,29 @@ def test_block_output_is_centered_at_init_for_zero_input():
     y = block(x)
     assert torch.isfinite(y).all()
     assert y.abs().max() <= 1.0
+
+
+def test_lgnmlpblock_topk_shape_contract_matches_mlp_slot():
+    from nanolgn.lgn_mlp import LGNMLPBlock
+    block = LGNMLPBlock(
+        d_model=32, k=4, depth=2, tau=4.0, seed=0,
+        interconnect="topk", topk=3, c_sparsity=1.0,
+    )
+    x = torch.randn(2, 5, 32)
+    y = block(x)
+    assert y.shape == (2, 5, 32)
+
+
+def test_lgnmlpblock_topk_finite_backward():
+    from nanolgn.lgn_mlp import LGNMLPBlock
+    block = LGNMLPBlock(
+        d_model=32, k=4, depth=2, tau=4.0, seed=0,
+        interconnect="topk", topk=3, c_sparsity=1.0,
+    )
+    x = torch.randn(2, 5, 32, requires_grad=True)
+    loss = block(x).sum()
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert torch.isfinite(x.grad).all()
+    for layer in block.body.layers:
+        assert torch.isfinite(layer.interconnect.top_c.grad).all()

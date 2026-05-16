@@ -89,6 +89,9 @@ class LGNMLPBlock(nn.Module):
         tau: float,
         seed: int,
         residual_init_strength: float = 7.5,
+        interconnect: str = "fixed",
+        topk: int = 8,
+        c_sparsity: float = 1.0,
     ):
         super().__init__()
         self.encode = ThermometerEncode(d_model=d_model, k=k)
@@ -97,13 +100,16 @@ class LGNMLPBlock(nn.Module):
             depth=depth,
             seed=seed,
             residual_init_strength=residual_init_strength,
+            interconnect=interconnect,
+            topk=topk,
+            c_sparsity=c_sparsity,
         )
         self.decode = GroupSumDecode(d_model=d_model, k=k, tau=tau)
 
     def forward(self, x: Tensor) -> Tensor:
-        b = self.encode(x)         # (B, T, K*d) in (0,1)
-        z = self.body(b)           # (B, T, K*d) in (0,1)
-        y = self.decode(z)         # (B, T, d)   in [-0.5, 0.5]
+        b = self.encode(x)
+        z = self.body(b)
+        y = self.decode(z)
         return y
 
 

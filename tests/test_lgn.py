@@ -260,3 +260,32 @@ def test_logic_layer_topk_param_set_includes_top_c():
 def test_logic_layer_topk_rejects_invalid_interconnect_value():
     with pytest.raises(ValueError):
         LogicLayer(n=64, seed=0, interconnect="bogus")
+
+
+def test_lgn_body_topk_shape():
+    body = LGNBody(n=128, depth=3, seed=0, interconnect="topk", topk=4, c_sparsity=1.0)
+    x = torch.rand(2, 5, 128)
+    assert body(x).shape == (2, 5, 128)
+
+
+def test_lgn_body_topk_gradients_flow_to_all_top_c():
+    body = LGNBody(n=64, depth=3, seed=0, interconnect="topk", topk=4, c_sparsity=1.0)
+    x = torch.rand(2, 64)
+    body(x).sum().backward()
+    for layer in body.layers:
+        assert layer.W.grad is not None
+        assert layer.interconnect.top_c.grad is not None
+        assert torch.isfinite(layer.interconnect.top_c.grad).all()
+
+
+def test_lgn_body_topk_per_layer_seeds_differ():
+    body = LGNBody(n=64, depth=3, seed=0, interconnect="topk", topk=4)
+    indices = [layer.interconnect.top_indices for layer in body.layers]
+    assert not torch.equal(indices[0], indices[1])
+    assert not torch.equal(indices[1], indices[2])
+
+
+def test_lgn_body_default_is_fixed():
+    body = LGNBody(n=64, depth=2, seed=0)
+    for layer in body.layers:
+        assert layer.interconnect_kind == "fixed"

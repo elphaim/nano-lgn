@@ -143,6 +143,9 @@ class LGNBody(nn.Module):
         depth: int,
         seed: int,
         residual_init_strength: float = 7.5,
+        interconnect: str = "fixed",
+        topk: int = 8,
+        c_sparsity: float = 1.0,
     ):
         super().__init__()
         self.n = n
@@ -153,6 +156,9 @@ class LGNBody(nn.Module):
                     n=n,
                     seed=seed * 1_000_003 + i,
                     residual_init_strength=residual_init_strength,
+                    interconnect=interconnect,
+                    topk=topk,
+                    c_sparsity=c_sparsity,
                 )
                 for i in range(depth)
             ]
