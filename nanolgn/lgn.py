@@ -13,6 +13,50 @@ from torch import nn, Tensor
 from .gates import GATE_A_INDEX, GATE_COEFFS
 
 
+class LearnableTopKInterconnect(nn.Module):
+    """Learnable Top-K softmax router producing 2n pair-slots from n inputs.
+
+    Each output slot has K candidate input indices (drawn deterministically
+    from seed at init) and a learnable logit per candidate. In train mode the
+    output is the K-way softmax-mixture; in eval mode it's the argmax gather.
+    """
+
+    def __init__(
+        self,
+        n_in: int,
+        n_out: int,
+        topk: int,
+        c_sparsity: float,
+        seed: int,
+    ):
+        super().__init__()
+        if topk > n_in:
+            raise ValueError(f"topk={topk} cannot exceed n_in={n_in}")
+        self.n_in = n_in
+        self.n_out = n_out
+        self.topk = topk
+        self.c_sparsity = float(c_sparsity)
+
+        gen = torch.Generator(device="cpu").manual_seed(seed)
+        # Dirac-style init: top-K of N(0,1) gives one dominant candidate per
+        # output, mimicking fixed random routing at t=0.
+        cc = torch.randn(n_in, 2 * n_out, generator=gen)
+        top_c, top_indices = torch.topk(cc, topk, dim=0, largest=True, sorted=True)
+
+        self.top_c = nn.Parameter(top_c)
+        self.register_buffer("top_indices", top_indices)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """x: (..., n_in) → (..., 2*n_out)."""
+        if self.training:
+            gathered = x[..., self.top_indices]                       # (..., K, 2n_out)
+            w = torch.softmax(self.top_c * self.c_sparsity, dim=0)    # (K, 2n_out)
+            return (gathered * w).sum(dim=-2)                         # (..., 2n_out)
+        top1 = torch.argmax(self.top_c, dim=0)                        # (2n_out,)
+        idx = self.top_indices[top1, torch.arange(2 * self.n_out, device=self.top_indices.device)]
+        return x.index_select(-1, idx)
+
+
 class LogicLayer(nn.Module):
     """N -> N width-preserving differentiable logic-gate layer.
 

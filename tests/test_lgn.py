@@ -109,3 +109,91 @@ def test_logiclayer_polynomial_matches_explicit_stack_form():
     p = torch.softmax(layer.W, dim=-1)
     y_ref = (all_gates_stack(a, b) * p).sum(dim=-1)
     assert torch.allclose(y_poly, y_ref, atol=1e-6)
+
+
+from nanolgn.lgn import LearnableTopKInterconnect
+
+
+def _make_topk(n_in=64, n_out=64, topk=4, c_sparsity=1.0, seed=0):
+    return LearnableTopKInterconnect(
+        n_in=n_in, n_out=n_out, topk=topk, c_sparsity=c_sparsity, seed=seed,
+    )
+
+
+def test_topk_interconnect_train_shape():
+    ic = _make_topk(n_in=64, n_out=64, topk=4)
+    ic.train()
+    x = torch.rand(2, 7, 64)
+    out = ic(x)
+    assert out.shape == (2, 7, 128)  # 2 * n_out
+
+
+def test_topk_interconnect_eval_shape():
+    ic = _make_topk(n_in=64, n_out=64, topk=4)
+    ic.eval()
+    x = torch.rand(2, 7, 64)
+    out = ic(x)
+    assert out.shape == (2, 7, 128)
+
+
+def test_topk_interconnect_param_and_buffer_layout():
+    ic = _make_topk(n_in=32, n_out=16, topk=5)
+    param_names = {name for name, _ in ic.named_parameters()}
+    buffer_names = {name for name, _ in ic.named_buffers()}
+    assert "top_c" in param_names
+    assert "top_indices" in buffer_names
+    assert ic.top_c.shape == (5, 32)         # (topk, 2 * n_out)
+    assert ic.top_indices.shape == (5, 32)
+
+
+def test_topk_interconnect_indices_are_valid():
+    ic = _make_topk(n_in=64, n_out=64, topk=4, seed=123)
+    assert ic.top_indices.min().item() >= 0
+    assert ic.top_indices.max().item() < 64
+
+
+def test_topk_interconnect_determinism_on_seed():
+    a = _make_topk(seed=42)
+    b = _make_topk(seed=42)
+    assert torch.equal(a.top_indices, b.top_indices)
+    assert torch.equal(a.top_c, b.top_c)
+
+
+def test_topk_interconnect_different_seeds_differ():
+    a = _make_topk(seed=0)
+    b = _make_topk(seed=1)
+    assert not torch.equal(a.top_indices, b.top_indices)
+
+
+def test_topk_interconnect_finite_backward():
+    ic = _make_topk(n_in=64, n_out=64, topk=4)
+    ic.train()
+    x = torch.rand(2, 64, requires_grad=True)
+    out = ic(x).sum()
+    out.backward()
+    assert torch.isfinite(out)
+    assert torch.isfinite(x.grad).all()
+    assert torch.isfinite(ic.top_c.grad).all()
+
+
+def test_topk_interconnect_eval_matches_train_when_top_c_is_one_hot():
+    """If top_c is one-hot, softmax → argmax, so train output == eval output."""
+    ic = _make_topk(n_in=64, n_out=64, topk=4, c_sparsity=1.0, seed=7)
+    with torch.no_grad():
+        ic.top_c.zero_()
+        ic.top_c[0, :] = 100.0  # K=0 saturates the softmax
+    x = torch.rand(3, 64)
+    ic.train()
+    y_train = ic(x)
+    ic.eval()
+    y_eval = ic(x)
+    assert torch.allclose(y_train, y_eval, atol=1e-5)
+
+
+def test_topk_interconnect_output_in_unit_interval_for_unit_input():
+    ic = _make_topk(n_in=64, n_out=64, topk=4)
+    ic.train()
+    x = torch.rand(4, 64)  # in [0, 1]
+    out = ic(x)
+    assert torch.all(out >= -1e-5)
+    assert torch.all(out <= 1.0 + 1e-5)
