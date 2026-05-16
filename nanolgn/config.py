@@ -25,6 +25,9 @@ class LGNCfg:
     L: int
     tau: float
     residual_init_strength: float = 7.5
+    interconnect: str = "fixed"
+    topk: int = 8
+    c_sparsity: float = 1.0
 
 
 def make_ffn_factory(
@@ -59,6 +62,9 @@ def make_ffn_factory(
                 tau=lgn.tau,
                 seed=base_seed * 1_000_003 + i,
                 residual_init_strength=lgn.residual_init_strength,
+                interconnect=lgn.interconnect,
+                topk=lgn.topk,
+                c_sparsity=lgn.c_sparsity,
             )
         return factory
 

@@ -45,3 +45,43 @@ def test_lgn_factory_uses_distinct_seed_per_block():
     pi2 = gpt.blocks[2].ffn.body.layers[0].pi_a
     assert not torch.equal(pi0, pi1)
     assert not torch.equal(pi1, pi2)
+
+
+def test_lgncfg_defaults_to_fixed_interconnect():
+    from nanolgn.config import LGNCfg
+    cfg_lgn = LGNCfg(K=4, L=2, tau=4.0)
+    assert cfg_lgn.interconnect == "fixed"
+    assert cfg_lgn.topk == 8
+    assert cfg_lgn.c_sparsity == 1.0
+
+
+def test_make_ffn_factory_passes_topk_kwargs_to_block():
+    import torch
+    from nanolgn.config import TransformerCfg, LGNCfg, make_ffn_factory
+    cfg = TransformerCfg(
+        d_model=32, n_layer=2, n_head=2, ctx_len=16,
+        vocab_size=100, ffn="lgn", seed=0,
+    )
+    lgn_cfg = LGNCfg(
+        K=4, L=2, tau=4.0,
+        interconnect="topk", topk=3, c_sparsity=1.0,
+    )
+    factory = make_ffn_factory(cfg, lgn_cfg)
+    block = factory(cfg)
+    for layer in block.body.layers:
+        assert layer.interconnect_kind == "topk"
+        assert layer.interconnect.topk == 3
+        assert layer.interconnect.c_sparsity == 1.0
+
+
+def test_make_ffn_factory_default_lgn_is_fixed_interconnect():
+    from nanolgn.config import TransformerCfg, LGNCfg, make_ffn_factory
+    cfg = TransformerCfg(
+        d_model=32, n_layer=1, n_head=2, ctx_len=16,
+        vocab_size=100, ffn="lgn", seed=0,
+    )
+    lgn_cfg = LGNCfg(K=4, L=2, tau=4.0)
+    factory = make_ffn_factory(cfg, lgn_cfg)
+    block = factory(cfg)
+    for layer in block.body.layers:
+        assert layer.interconnect_kind == "fixed"
