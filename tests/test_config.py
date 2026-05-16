@@ -48,7 +48,6 @@ def test_lgn_factory_uses_distinct_seed_per_block():
 
 
 def test_lgncfg_defaults_to_fixed_interconnect():
-    from nanolgn.config import LGNCfg
     cfg_lgn = LGNCfg(K=4, L=2, tau=4.0)
     assert cfg_lgn.interconnect == "fixed"
     assert cfg_lgn.topk == 8
@@ -56,10 +55,8 @@ def test_lgncfg_defaults_to_fixed_interconnect():
 
 
 def test_make_ffn_factory_passes_topk_kwargs_to_block():
-    import torch
-    from nanolgn.config import TransformerCfg, LGNCfg, make_ffn_factory
     cfg = TransformerCfg(
-        d_model=32, n_layer=2, n_head=2, ctx_len=16,
+        d_model=32, n_layer=1, n_head=2, ctx_len=16,
         vocab_size=100, ffn="lgn", seed=0,
     )
     lgn_cfg = LGNCfg(
@@ -75,7 +72,6 @@ def test_make_ffn_factory_passes_topk_kwargs_to_block():
 
 
 def test_make_ffn_factory_default_lgn_is_fixed_interconnect():
-    from nanolgn.config import TransformerCfg, LGNCfg, make_ffn_factory
     cfg = TransformerCfg(
         d_model=32, n_layer=1, n_head=2, ctx_len=16,
         vocab_size=100, ffn="lgn", seed=0,
