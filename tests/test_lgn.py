@@ -197,3 +197,19 @@ def test_topk_interconnect_output_in_unit_interval_for_unit_input():
     out = ic(x)
     assert torch.all(out >= -1e-5)
     assert torch.all(out <= 1.0 + 1e-5)
+
+
+def test_topk_interconnect_c_sparsity_changes_forward_output():
+    """Regression guard: c_sparsity must reach the forward path. Same seed
+    fixes top_c and top_indices, so the only thing that can change the
+    train output is the c_sparsity multiplier on the softmax logits."""
+    ic_lo = _make_topk(n_in=64, n_out=64, topk=4, c_sparsity=1.0, seed=0)
+    ic_hi = _make_topk(n_in=64, n_out=64, topk=4, c_sparsity=5.0, seed=0)
+    assert torch.equal(ic_lo.top_c, ic_hi.top_c)
+    assert torch.equal(ic_lo.top_indices, ic_hi.top_indices)
+    ic_lo.train()
+    ic_hi.train()
+    x = torch.rand(2, 64)
+    y_lo = ic_lo(x)
+    y_hi = ic_hi(x)
+    assert not torch.allclose(y_lo, y_hi, atol=1e-4)
