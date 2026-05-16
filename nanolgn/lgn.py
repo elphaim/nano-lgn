@@ -2,9 +2,10 @@
 """LogicLayer: one layer of a Differentiable Logic Gate Network.
 
 Each of N output neurons is a softmax-mixture over the 16 binary gates,
-applied to two fixed-random inputs (pi_a[j], pi_b[j]) drawn from the previous
-layer. Residual init makes the layer ≈ identity-on-pi_a at t=0 so deep stacks
-train.
+applied to a pair of inputs (a, b) chosen by the layer's interconnect:
+fixed-random buffers (pi_a[j], pi_b[j]) by default, or a learnable Top-K
+softmax router when interconnect="topk". Residual init makes the layer
+≈ identity-on-a at t=0 so deep stacks train.
 """
 from __future__ import annotations
 import torch
@@ -115,7 +116,13 @@ class LogicLayer(nn.Module):
         return a, b
 
     def forward(self, x: Tensor) -> Tensor:
-        """x: (..., n) in [0,1]. Returns (..., n) in [0,1]."""
+        """x: (..., n) in [0,1]. Returns (..., n) in [0,1].
+
+        Polynomial form: Σ_g p_g · gate_g(a, b) = α + β·a + γ·b + δ·a·b, where
+        (α, β, γ, δ) = p @ GATE_COEFFS. Mathematically identical to
+        (all_gates_stack(a, b) * p).sum(-1), but never materializes the
+        (..., n, 16) stack — the dominant activation cost on the old path.
+        """
         a, b = self._route(x)
         p = torch.softmax(self.W, dim=-1)                    # (n, 16)
         coeffs = p @ self.gate_coeffs                        # (n, 4)
