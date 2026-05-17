@@ -81,3 +81,12 @@ def test_make_ffn_factory_default_lgn_is_fixed_interconnect():
     block = factory(cfg)
     for layer in block.body.layers:
         assert layer.interconnect_kind == "fixed"
+
+
+def test_configs_poc_a_lgn_topk_imports_and_is_topk():
+    from configs.poc_a_lgn_topk import cfg, lgn
+    assert cfg.ffn == "lgn"
+    assert lgn.interconnect == "topk"
+    assert lgn.topk == 5
+    assert lgn.c_sparsity == 1.0
+    assert lgn.residual_init_strength == 3.5
