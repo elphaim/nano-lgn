@@ -127,3 +127,38 @@ def test_lgnmlpblock_topk_finite_backward():
     assert torch.isfinite(x.grad).all()
     for layer in block.body.layers:
         assert torch.isfinite(layer.interconnect.top_c.grad).all()
+
+
+def test_lgn_block_stats_fixed_path_keys_unchanged():
+    """Fixed-interconnect blocks expose interconnect_* keys as None."""
+    from nanolgn.lgn_mlp import lgn_block_stats
+    block = LGNMLPBlock(d_model=32, k=4, depth=2, tau=4.0, seed=0)
+    x = torch.randn(2, 5, 32)
+    out = block(x)
+    stats = lgn_block_stats(block, out)
+    assert "ffn_out_norm_mean" in stats
+    assert "gate_entropy_mean" in stats
+    assert "threshold_in_range_frac" in stats
+    assert stats["interconnect_entropy_mean"] is None
+    assert stats["interconnect_unique_argmax_frac"] is None
+
+
+def test_lgn_block_stats_topk_path_populates_interconnect_metrics():
+    from nanolgn.lgn_mlp import lgn_block_stats
+    block = LGNMLPBlock(
+        d_model=32, k=4, depth=2, tau=4.0, seed=0,
+        interconnect="topk", topk=3, c_sparsity=1.0,
+    )
+    x = torch.randn(2, 5, 32)
+    out = block(x)
+    stats = lgn_block_stats(block, out)
+    h = stats["interconnect_entropy_mean"]
+    u = stats["interconnect_unique_argmax_frac"]
+    assert h is not None
+    assert u is not None
+    # Dirac-style init → entropy below uniform-K (= log K), well below
+    # the upper bound. K=3 gives log 3 ≈ 1.0986.
+    import math
+    assert 0.0 <= h <= math.log(3) + 1e-6
+    # unique argmax fraction lives in [0, 1].
+    assert 0.0 <= u <= 1.0

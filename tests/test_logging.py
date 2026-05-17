@@ -19,6 +19,11 @@ def test_lgn_block_stats_returns_expected_keys():
     assert set(stats.keys()) == {
         "ffn_out_norm_mean", "ffn_out_max",
         "gate_entropy_mean", "threshold_in_range_frac",
+        "interconnect_entropy_mean", "interconnect_unique_argmax_frac",
     }
-    for v in stats.values():
-        assert isinstance(v, float)
+    for k, v in stats.items():
+        if k.startswith("interconnect_"):
+            # None on fixed-interconnect blocks (this test uses default routing).
+            assert v is None
+        else:
+            assert isinstance(v, float)

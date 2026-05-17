@@ -118,10 +118,14 @@ def main() -> int:
             for i, block in enumerate(model.blocks):
                 if isinstance(block.ffn, LGNMLPBlock) and block.last_ffn_out is not None:
                     s = lgn_block_stats(block.ffn, block.last_ffn_out)
-                    print(f"    block {i}: norm={s['ffn_out_norm_mean']:.3f} "
-                          f"max={s['ffn_out_max']:.3f} "
-                          f"H(p)={s['gate_entropy_mean']:.3f} "
-                          f"theta_in_range={s['threshold_in_range_frac']:.2f}")
+                    line = (f"    block {i}: norm={s['ffn_out_norm_mean']:.3f} "
+                            f"max={s['ffn_out_max']:.3f} "
+                            f"H(p)={s['gate_entropy_mean']:.3f} "
+                            f"theta_in_range={s['threshold_in_range_frac']:.2f}")
+                    if s["interconnect_entropy_mean"] is not None:
+                        line += (f" H(C)={s['interconnect_entropy_mean']:.3f}"
+                                 f" uniq_argmax={s['interconnect_unique_argmax_frac']:.2f}")
+                    print(line)
         if is_lgn and step == cfg_mod.log_block_stats_until:
             for block in model.blocks:
                 block.cache_ffn_out = False

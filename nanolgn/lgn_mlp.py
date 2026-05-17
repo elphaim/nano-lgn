@@ -127,6 +127,10 @@ def lgn_block_stats(block: "LGNMLPBlock", last_ffn_out: Tensor) -> dict:
         gate_entropy_mean : float — mean entropy of softmax(W) across all neurons (nats)
         threshold_in_range_frac : float — fraction of (theta_{i,k}) that lie within
             ±3 of zero (i.e. plausibly active for typical RMS-normed inputs).
+        interconnect_entropy_mean : float | None — mean entropy of softmax(top_c)
+            across all pair-slots (nats); None if the body uses fixed routing.
+        interconnect_unique_argmax_frac : float | None — fraction of distinct
+            argmax-routed input indices across all pair-slots; None if fixed routing.
     """
     out = last_ffn_out
     norm = out.flatten(0, -2).norm(dim=-1).mean().item()
@@ -142,9 +146,34 @@ def lgn_block_stats(block: "LGNMLPBlock", last_ffn_out: Tensor) -> dict:
     theta = block.encode.theta
     in_range = ((theta.abs() <= 3.0).float()).mean().item()
 
+    ic_entropies: list[float] = []
+    ic_unique_fracs: list[float] = []
+    for layer in block.body.layers:
+        if layer.interconnect_kind != "topk":
+            continue
+        ic = layer.interconnect
+        p = torch.softmax(ic.top_c * ic.c_sparsity, dim=0)            # (K, 2n_out)
+        h = -(p * (p.clamp_min(1e-12).log())).sum(dim=0)              # (2n_out,)
+        ic_entropies.append(h.mean().item())
+        top1 = torch.argmax(ic.top_c, dim=0)                          # (2n_out,)
+        argmax_idx = ic.top_indices[
+            top1, torch.arange(ic.top_indices.shape[-1], device=ic.top_indices.device)
+        ]
+        n_unique = torch.unique(argmax_idx).numel()
+        ic_unique_fracs.append(n_unique / float(argmax_idx.numel()))
+
+    interconnect_entropy_mean = (
+        sum(ic_entropies) / len(ic_entropies) if ic_entropies else None
+    )
+    interconnect_unique_argmax_frac = (
+        sum(ic_unique_fracs) / len(ic_unique_fracs) if ic_unique_fracs else None
+    )
+
     return {
         "ffn_out_norm_mean": norm,
         "ffn_out_max": omax,
         "gate_entropy_mean": gate_entropy_mean,
         "threshold_in_range_frac": in_range,
+        "interconnect_entropy_mean": interconnect_entropy_mean,
+        "interconnect_unique_argmax_frac": interconnect_unique_argmax_frac,
     }
