@@ -36,6 +36,19 @@ def cosine_lr(step: int, warmup: int, max_steps: int, peak: float, min_lr: float
     return min_lr + (peak - min_lr) * cos
 
 
+def _has_native_bf16(device: torch.device) -> bool:
+    """True only when the GPU has native bf16 Tensor Cores (Ampere sm_80+).
+
+    `torch.cuda.is_bf16_supported()` is too permissive — it returns True on
+    Turing (T4, sm_75) where bf16 runs emulated on the fp32 path with no
+    Tensor Core acceleration. Gate on compute capability instead.
+    """
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device)
+    return major >= 8
+
+
 def setup_ddp() -> tuple[int, int, int, bool]:
     """Returns (rank, world_size, local_rank, is_ddp). No-op if env vars absent."""
     if "RANK" not in os.environ or "WORLD_SIZE" not in os.environ:
@@ -92,11 +105,7 @@ def main() -> int:
     else:
         device = torch.device("cpu")
 
-    amp_dtype = (
-        torch.bfloat16
-        if device.type == "cuda" and torch.cuda.is_bf16_supported()
-        else torch.float16
-    )
+    amp_dtype = torch.bfloat16 if _has_native_bf16(device) else torch.float16
 
     model = build_model(cfg_mod, device)
     if is_main:
