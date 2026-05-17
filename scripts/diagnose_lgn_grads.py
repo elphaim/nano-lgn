@@ -26,13 +26,13 @@ Defaults: --steps 200, --seed 0, --device autodetect (cuda if available).
 """
 from __future__ import annotations
 import argparse
+import importlib
 import sys
 
 import numpy as np
 import torch
 from torch import nn
 
-from configs.poc_a_lgn import cfg, lgn
 from nanolgn.config import make_ffn_factory
 from nanolgn.gpt import GPT
 
@@ -46,6 +46,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--device", type=str, default=None,
                    choices=["cuda", "cpu"],
                    help="device override (default: cuda if available else cpu)")
+    p.add_argument("--config", type=str, default="configs.poc_a_lgn",
+                   help="dotted module path exposing `cfg` and `lgn` (default: configs.poc_a_lgn)")
     return p.parse_args()
 
 
@@ -55,7 +57,7 @@ def resolve_device(arg: str | None) -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def discover_params(model: nn.Module) -> dict:
+def discover_params(model: nn.Module, cfg, lgn) -> dict:
     """Walk model.named_parameters() and return a structured grouping.
 
     Returns:
@@ -100,8 +102,24 @@ def discover_params(model: nn.Module) -> dict:
     if "lm_head.weight" not in named:
         raise RuntimeError("expected 'lm_head.weight' parameter not found")
 
+    probe_key = "blocks.0.ffn.body.layers.0.interconnect.top_c"
+    interconnect_per_block: list[list[nn.Parameter]] | None
+    if probe_key in named:
+        interconnect_per_block = []
+        for i in range(n_layer):
+            row = []
+            for j in range(L):
+                key = f"blocks.{i}.ffn.body.layers.{j}.interconnect.top_c"
+                if key not in named:
+                    raise RuntimeError(f"expected interconnect parameter not found: {key!r}")
+                row.append(named[key])
+            interconnect_per_block.append(row)
+    else:
+        interconnect_per_block = None
+
     return {
         "W_per_block": W_per_block,
+        "interconnect_per_block": interconnect_per_block,
         "attn":        attn,
         "embed":       named["tok_emb.weight"],
         "head":        named["lm_head.weight"],
@@ -129,9 +147,11 @@ def compute_grad_metrics(groups: dict) -> dict:
     """Compute the per-measurement dict of gradient norms.
 
     Mean-of-norms aggregation (apples-to-apples between LGN-W and attn):
-      - grad_W:           mean of |W.grad|_2 across all 16 LGN-W tensors
-      - grad_W_per_block: list of 4 floats, mean within each block
-      - grad_attn:        mean of |qkv.weight.grad|_2 across 4 attn blocks
+      - grad_W:           mean of |W.grad|_2 across all LGN-W tensors
+      - grad_W_per_block: list of n_layer floats, mean within each block
+      - grad_C:           mean of |top_c.grad|_2 across all interconnect params,
+                          or None when interconnect_per_block is None (fixed routing)
+      - grad_attn:        mean of |qkv.weight.grad|_2 across attn blocks
       - grad_embed, grad_lm_head: single-tensor L2 norms
       - ratio:            grad_W / grad_attn (avoiding div-by-zero)
     """
@@ -141,6 +161,15 @@ def compute_grad_metrics(groups: dict) -> dict:
         for row in W_per_block
     ]
     grad_W = float(np.mean(grad_W_per_block))
+
+    ic_rows = groups["interconnect_per_block"]
+    if ic_rows is not None:
+        grad_C: float | None = float(
+            np.mean([_grad_norm(p) for row in ic_rows for p in row])
+        )
+    else:
+        grad_C = None
+
     grad_attn = float(np.mean([_grad_norm(a) for a in groups["attn"]]))
     grad_embed = _grad_norm(groups["embed"])
     grad_lm_head = _grad_norm(groups["head"])
@@ -149,6 +178,7 @@ def compute_grad_metrics(groups: dict) -> dict:
     return {
         "grad_W":           grad_W,
         "grad_W_per_block": grad_W_per_block,
+        "grad_C":           grad_C,
         "grad_attn":        grad_attn,
         "grad_embed":       grad_embed,
         "grad_lm_head":     grad_lm_head,
@@ -159,14 +189,15 @@ def compute_grad_metrics(groups: dict) -> dict:
 def format_trajectory_table(measurements: list[dict]) -> str:
     """Table 1: per-step trajectory of gradient norms and loss."""
     header = (
-        " step | loss   | |∇W|     | |∇attn|  | |∇embed| | |∇head|  | W/attn\n"
-        "------+--------+----------+----------+-----------+----------+----------"
+        " step | loss   | |∇W|     | |∇C|     | |∇attn|  | |∇embed| | |∇head|  | W/attn\n"
+        "------+--------+----------+----------+----------+-----------+----------+----------"
     )
     rows = []
     for m in measurements:
+        grad_C_str = f"{m['grad_C']:.2e}" if m["grad_C"] is not None else "    -   "
         rows.append(
             f" {m['step']:>4} | {m['loss']:>6.3f} | "
-            f"{m['grad_W']:.2e} | {m['grad_attn']:.2e} | "
+            f"{m['grad_W']:.2e} | {grad_C_str} | {m['grad_attn']:.2e} | "
             f"{m['grad_embed']:.2e}  | {m['grad_lm_head']:.2e} | "
             f"{m['ratio']:.2e}"
         )
@@ -216,6 +247,9 @@ def format_verdict(measurements: list[dict]) -> str:
 
 def main() -> int:
     args = parse_args()
+    config_mod = importlib.import_module(args.config)
+    cfg = config_mod.cfg
+    lgn = config_mod.lgn
     device = resolve_device(args.device)
     if device.type == "cpu":
         print("WARNING: POC-A shape on CPU is slow; expect >=10 min for 200 steps. "
@@ -229,7 +263,7 @@ def main() -> int:
     print(f"config: d_model={cfg.d_model} n_layer={cfg.n_layer} ctx_len={cfg.ctx_len}")
     print(f"lgn:    K={lgn.K} L={lgn.L} tau={lgn.tau} s={lgn.residual_init_strength}")
 
-    groups = discover_params(model)
+    groups = discover_params(model, cfg, lgn)
     print(f"discovered: {len(groups['W_per_block'])} blocks x "
           f"{len(groups['W_per_block'][0])} LGN-W tensors, "
           f"{len(groups['attn'])} attn-qkv, 1 embed, 1 head")
