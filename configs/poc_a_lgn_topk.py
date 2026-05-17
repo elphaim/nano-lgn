@@ -17,7 +17,7 @@ lgn = LGNCfg(
     c_sparsity=1.0,
 )
 
-batch_size = 32
+batch_size = 16
 max_steps = 5000
 warmup_steps = 200
 peak_lr = 3e-4
